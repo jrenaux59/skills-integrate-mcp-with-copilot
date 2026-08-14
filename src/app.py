@@ -5,7 +5,7 @@ A super simple FastAPI application that allows students to view and sign up
 for extracurricular activities at Mergington High School.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Form, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import os
@@ -78,9 +78,39 @@ activities = {
 }
 
 
+def teacher_is_logged_in(request: Request) -> bool:
+    return request.cookies.get("teacher_logged_in") == "true"
+
+
 @app.get("/")
 def root():
     return RedirectResponse(url="/static/index.html")
+
+
+@app.get("/me")
+def get_current_user(request: Request):
+    return {"logged_in": teacher_is_logged_in(request)}
+
+
+@app.post("/login")
+def login(username: str = Form(...), password: str = Form(...), response: Response = None):
+    if username == "teacher" and password == "Mergington123!":
+        response.set_cookie(
+            key="teacher_logged_in",
+            value="true",
+            httponly=True,
+            samesite="lax",
+            secure=False,
+        )
+        return {"message": "Teacher login successful", "logged_in": True}
+
+    raise HTTPException(status_code=401, detail="Invalid username or password")
+
+
+@app.post("/logout")
+def logout(response: Response):
+    response.delete_cookie(key="teacher_logged_in", path="/")
+    return {"message": "Logged out successfully", "logged_in": False}
 
 
 @app.get("/activities")
@@ -89,8 +119,14 @@ def get_activities():
 
 
 @app.post("/activities/{activity_name}/signup")
-def signup_for_activity(activity_name: str, email: str):
-    """Sign up a student for an activity"""
+def signup_for_activity(activity_name: str, email: str, request: Request):
+    """Register a student for an activity. Only teacher accounts can do this."""
+    if not teacher_is_logged_in(request):
+        raise HTTPException(
+            status_code=403,
+            detail="Teacher login required to register students"
+        )
+
     # Validate activity exists
     if activity_name not in activities:
         raise HTTPException(status_code=404, detail="Activity not found")
@@ -111,8 +147,14 @@ def signup_for_activity(activity_name: str, email: str):
 
 
 @app.delete("/activities/{activity_name}/unregister")
-def unregister_from_activity(activity_name: str, email: str):
-    """Unregister a student from an activity"""
+def unregister_from_activity(activity_name: str, email: str, request: Request):
+    """Unregister a student from an activity. Only teacher accounts can do this."""
+    if not teacher_is_logged_in(request):
+        raise HTTPException(
+            status_code=403,
+            detail="Teacher login required to unregister students"
+        )
+
     # Validate activity exists
     if activity_name not in activities:
         raise HTTPException(status_code=404, detail="Activity not found")
