@@ -3,6 +3,37 @@ document.addEventListener("DOMContentLoaded", () => {
   const activitySelect = document.getElementById("activity");
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
+  const loginButton = document.getElementById("login-button");
+  const loginModal = document.getElementById("login-modal");
+  const loginForm = document.getElementById("login-form");
+  const closeLoginModalButton = document.getElementById("close-login-modal");
+
+  function setTeacherMode(isLoggedIn) {
+    loginButton.textContent = isLoggedIn ? "Teacher Logout" : "Teacher Login";
+    loginButton.dataset.loggedIn = String(isLoggedIn);
+
+    const inputs = signupForm.querySelectorAll("input, select, button[type='submit']");
+    inputs.forEach((element) => {
+      element.disabled = !isLoggedIn;
+    });
+
+    if (!isLoggedIn) {
+      messageDiv.textContent = "Teacher login required to register or unregister students.";
+      messageDiv.className = "info";
+      messageDiv.classList.remove("hidden");
+    }
+  }
+
+  async function fetchCurrentUser() {
+    try {
+      const response = await fetch("/me");
+      const user = await response.json();
+      setTeacherMode(Boolean(user.logged_in));
+    } catch (error) {
+      console.error("Error fetching current user:", error);
+      setTeacherMode(false);
+    }
+  }
 
   // Function to fetch activities from API
   async function fetchActivities() {
@@ -12,6 +43,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Clear loading message
       activitiesList.innerHTML = "";
+      activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
 
       // Populate activities list
       Object.entries(activities).forEach(([name, details]) => {
@@ -30,7 +62,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${details.participants
                   .map(
                     (email) =>
-                      `<li><span class="participant-email">${email}</span><button class="delete-btn" data-activity="${name}" data-email="${email}">❌</button></li>`
+                      `<li><span class="participant-email">${email}</span>${loginButton.dataset.loggedIn === "true" ? `<button class="delete-btn" data-activity="${name}" data-email="${email}">❌</button>` : ""}</li>`
                   )
                   .join("")}
               </ul>
@@ -155,6 +187,55 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  loginButton.addEventListener("click", async () => {
+    if (loginButton.dataset.loggedIn === "true") {
+      const response = await fetch("/logout", { method: "POST" });
+      const result = await response.json();
+      setTeacherMode(false);
+      messageDiv.textContent = result.message;
+      messageDiv.className = "info";
+      messageDiv.classList.remove("hidden");
+      fetchActivities();
+      return;
+    }
+
+    loginModal.classList.remove("hidden");
+    loginModal.setAttribute("aria-hidden", "false");
+  });
+
+  closeLoginModalButton.addEventListener("click", () => {
+    loginModal.classList.add("hidden");
+    loginModal.setAttribute("aria-hidden", "true");
+  });
+
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const formData = new FormData(loginForm);
+    const response = await fetch("/login", {
+      method: "POST",
+      body: formData,
+    });
+
+    const result = await response.json();
+
+    if (response.ok) {
+      loginModal.classList.add("hidden");
+      loginModal.setAttribute("aria-hidden", "true");
+      loginForm.reset();
+      setTeacherMode(true);
+      messageDiv.textContent = result.message;
+      messageDiv.className = "success";
+      messageDiv.classList.remove("hidden");
+      fetchActivities();
+    } else {
+      messageDiv.textContent = result.detail || "An error occurred";
+      messageDiv.className = "error";
+      messageDiv.classList.remove("hidden");
+    }
+  });
+
   // Initialize app
   fetchActivities();
+  fetchCurrentUser();
 });
